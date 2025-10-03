@@ -173,6 +173,14 @@ debug: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 		-device loader,file=$(UCOREIMG),addr=0x80200000\
 		-s -S
 
+debug-sbi: $(kernel) $(SWAPIMG) $(SFSIMG)
+	$(V)$(QEMU) \
+		-machine virt \
+		-nographic \
+		-bios default \
+		-kernel $(kernel) \
+		-s -S
+
 gdb:
 	riscv64-unknown-elf-gdb \
     -ex 'file bin/kernel' \
