@@ -12,7 +12,8 @@ kern_entry:
     la t0, boot_dtb
     sd a1, 0(t0)
 
-    # t0 := 三级页表的虚拟地址
+    # t0 := 三级页表的虚拟地址（%hi伪指令）
+    # 反汇编结果：0x80200018:  lui     t0,0xc0205，高32位符号扩展为ffffffff，低12位清零（刚好对齐）
     lui     t0, %hi(boot_page_table_sv39)
     # t1 := 0xffffffff40000000 即虚实映射偏移量
     li      t1, 0xffffffffc0000000 - 0x80000000
@@ -21,9 +22,9 @@ kern_entry:
     # t0 >>= 12，变为三级页表的物理页号
     srli    t0, t0, 12
 
-    # t1 := 8 << 60，设置 satp 的 MODE 字段为 Sv39
+    # t1 := 8 << 60，设置 satp 的 MODE 字段为 Sv39（最高四位1000）
     li      t1, 8 << 60
-    # 将刚才计算出的预设三级页表物理页号附加到 satp 中
+    # 将刚才计算出的预设三级页表物理页号附加到 satp 中（最后44位）
     or      t0, t0, t1
     # 将算出的 t0(即新的MODE|页表基址物理页号) 覆盖到 satp 中
     csrw    satp, t0
@@ -41,6 +42,7 @@ kern_entry:
     addi t0, t0, %lo(kern_init)
     jr t0
 
+# 上次实验实现的启动栈（8KB）
 .section .data
     # .align 2^12
     .align PGSHIFT
@@ -50,18 +52,25 @@ bootstack:
     .global bootstacktop
 bootstacktop:
 
+# 内核使用的页表
 .section .data
     # 由于我们要把这个页表放到一个页里面，因此必须 12 位对齐
     .align PGSHIFT
     .global boot_page_table_sv39
+
 # 分配 4KiB 内存给预设的三级页表
 boot_page_table_sv39:
     # 0xffffffff_c0000000 map to 0x80000000 (1G)
     # 前 511 个页表项均设置为 0 ，因此 V=0 ，意味着是空的(unmapped)
     .zero 8 * 511
-    # 设置最后一个页表项，PPN=0x80000，标志位 VRWXAD 均为 1
+
+    # 设置最后一个页表项，PPN=0x80000，标志位 VRWXAD 均为 1 （地址0x80000000，页号即取去掉16进制的后3位2^12）
+    # .quad用于设置一个8字节数值，这里即一个完整的 PTE
+    # 将 0x80000 左移 10 位，正好将其放置在 PTE 中 PPN 字段的起始位置（位 10）
+    # 0xcf=1100 1111，代表8个标志位
     .quad (0x80000 << 10) | 0xcf # VRWXAD
 
+# 存储启动时 CPU ID (hartid) 和设备树地址 (dtb) 的 全局变量
     .global boot_hartid
 boot_hartid:
     .quad 0
