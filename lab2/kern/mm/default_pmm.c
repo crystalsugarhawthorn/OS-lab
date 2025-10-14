@@ -62,6 +62,13 @@ static free_area_t free_area;
 #define free_list (free_area.free_list)
 #define nr_free (free_area.nr_free)
 
+/*
+// 功能：
+// 初始化空闲链表管理器。这是内存管理器的“启动”函数。
+// 实现逻辑：
+// list_init(&free_list);：调用 list.h 中的函数，将 free_list 初始化为一个空的双向链表。此时链表中只有头结点自己，形成一个环。
+// nr_free = 0;：将总的空闲页计数器清零。
+*/
 static void
 default_init(void) {
     list_init(&free_list);
@@ -69,6 +76,22 @@ default_init(void) {
 }
 
 // 用于初始化一个空闲块
+/*
+// 功能：
+//      接收一个物理内存区域（由起始页 base 和总页数 n 定义），并将其作为一个大的空闲块加入到全局空闲链表 free_list 中。
+// 实现逻辑：
+//      初始化每一页：遍历从 base 开始的 n 个 Page 结构体，对每一个进行初始化：
+//          p->flags = p->property = 0;：清除 flags 和 property 字段。
+//          set_page_ref(p, 0);：将页的引用计数清零，表示它当前未被任何进程使用。
+//      标记起始页：
+//          base->property = n;：对于这块连续内存的起始页 base，将其 property 字段设置为块的总大小 n。
+//          SetPageProperty(base);：设置 base 的 flags 中的 PG_property 位，明确标记它是一个空闲块的“头”。
+//      更新总空闲页数：
+//          nr_free += n;：将这 n 个页加入到总空闲页数中。
+//      插入空闲链表：将这个新的空闲块（由 base 代表）插入到全局的 free_list 中。为了方便后续的合并操作，代码实现了一个按地址有序的插入逻辑：
+//          它会遍历 free_list，找到第一个地址比 base 大的空闲块，然后将 base 插入到它的前面。
+//          这确保了 free_list 中的空闲块始终是按照物理地址从低到高排列的。
+*/
 static void
 default_init_memmap(struct Page *base, size_t n) {
     assert(n > 0);
@@ -103,6 +126,27 @@ default_init_memmap(struct Page *base, size_t n) {
 }
 
 // 搜索空闲列表，找到第一个空闲块（块大小≥n页），调整该空闲块的大小，并返回已分配块的起始地址
+/*
+// 功能：
+//      根据首次适应算法分配 n 个连续的物理页。
+// 实现逻辑：
+//      预检查：首先检查请求的页数 n 是否大于总的空闲页数 nr_free。如果是，则直接返回 NULL，表示内存不足。
+//      遍历查找 (First-Fit)：
+//          从 free_list 的头部开始，依次遍历每一个空闲块。
+//          struct Page *p = le2page(le, page_link);：通过链表节点 le 获取对应的 Page 结构体指针。
+//          if (p->property >= n)：检查当前空闲块的大小是否满足请求（>= n）。
+//          一旦找到第一个满足条件的块，就跳出循环。这就是“首次适应”的核心体现。
+// 执行分配：
+//      如果找到了合适的块 (page != NULL)：
+//          从链表移除：首先将这个找到的空闲块（由 page 代表）从 free_list 中移除 (list_del)。
+//          分割操作：检查 if (page->property > n)，即这个块是否比请求的要大。
+//                   如果更大，说明有剩余。那么就从 page + n 的位置创建一个新的空闲块，其大小为 page->property - n。
+//                   将这个新的、更小的剩余块重新插入到 free_list 中原来的位置。
+//          更新计数：nr_free -= n;，从总空闲页数中减去已分配的 n 页。
+//          清除标志：ClearPageProperty(page);，清除被分配出去的内存块起始页的 PG_property 标志，因为它现在不再是空闲块了。
+//          返回：返回分配到的内存块的起始页指针 page。
+// 分配失败：如果遍历完整个 free_list 都没有找到足够大的块，则返回 NULL。
+*/
 static struct Page *
 default_alloc_pages(size_t n) {
     assert(n > 0);
@@ -140,6 +184,24 @@ default_alloc_pages(size_t n) {
 }
 
 // 将页重新链接回空闲列表，并尝试将小的空闲块合并成大的空闲块
+/*
+// 功能：
+//      回收 n 个从 base 地址开始的连续物理页，并将它们放回 free_list 中。同时，尝试与相邻的空闲块进行合并，以减少内存碎片。
+// 实现逻辑：
+//      初始化被回收的页：遍历要释放的 n 个页，重置它们的 flags 和引用计数。
+//      标记为新空闲块：
+//          base->property = n;：设置起始页 base 的 property 为 n。
+//          SetPageProperty(base);：将其标记为空闲块的头部。
+//      插入空闲链表：和 default_init_memmap 一样，按照地址有序的规则，将被回收的块插入到 free_list 中。
+//      向前合并 (Merge with previous)：
+//          找到刚刚插入的 base 块在链表中的前一个块 p。
+//          检查 p + p->property == base 是否成立。这个条件判断前一个空闲块 p 的末尾是否正好与当前回收的块 base 的开头相连。
+//          如果相连，则将两个块合并：将 p 的大小增加 n (p->property += base->property;)，并从链表中删除 base 节点。
+//      向后合并 (Merge with next)：
+//          找到当前块 base（可能是已经合并过的块）在链表中的后一个块 p。
+//          检查 base + base->property == p 是否成立，即当前块的末尾是否与后一个块的开头相连。
+//          如果相连，则将两个块合并：将 base 的大小增加 p 的大小 (base->property += p->property;)，并从链表中删除 p 节点。
+*/
 static void
 default_free_pages(struct Page *base, size_t n) {
     assert(n > 0);
