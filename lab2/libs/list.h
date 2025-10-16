@@ -55,6 +55,11 @@ list_add(list_entry_t *listelm, list_entry_t *elm) {
     list_add_after(listelm, elm);
 }
 
+static inline void
+list_add_tail(list_entry_t *listelm, list_entry_t *elm) {
+    list_add(listelm->prev, elm);
+}
+
 /* *
  * list_add_before - add a new entry
  * @listelm:    list head to add before
