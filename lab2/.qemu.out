@@ -29,12 +29,12 @@ Physical Memory from DTB:
 DTB init completed
 (THU.CST) os is loading ...
 Special kernel symbols:
-  entry  0xffffffffc02000d6 (virtual)
-  etext  0xffffffffc0201540 (virtual)
+  entry  0xffffffffc02000d8 (virtual)
+  etext  0xffffffffc0201662 (virtual)
   edata  0xffffffffc0205018 (virtual)
-  end    0xffffffffc0215080 (virtual)
-Kernel executable memory footprint: 84KB
-memory management: buddy_system_array_pmm_manager
+  end    0xffffffffc0205078 (virtual)
+Kernel executable memory footprint: 20KB
+memory management: best_fit_pmm_manager
 physcial memory map:
   memory: 0x0000000008000000, [0x0000000080000000, 0x0000000087ffffff].
 check_alloc_page() succeeded!
