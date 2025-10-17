@@ -354,6 +354,7 @@ buddy_system_check(void) {
         if (!p) break;
         allocs[count++] = p;
     }
+    assert(buddy_system_nr_free_pages() == 0);
     // 全部释放，检查内存是否完全恢复
     for (int i = 0; i < count; i++) {
         buddy_system_free_pages(allocs[i], 1);
