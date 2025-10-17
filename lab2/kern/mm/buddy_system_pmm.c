@@ -13,7 +13,7 @@
  *   - 所有地址计算和伙伴查找都基于页帧号（PPN），以简化对齐和位运算。
  */
 
-#define MAX_ORDER   16  // 定义系统支持的最大阶，一页为 4KB，则最大块大小为 64MB
+#define MAX_ORDER   16  // 定义系统支持的最大阶，一页为 4KB，则最大块大小为 256MB
 
 // 用于管理每一阶空闲块的数组
 static free_area_t free_area[MAX_ORDER + 1];
@@ -391,4 +391,5 @@ const struct pmm_manager buddy_system_pmm_manager = {
     .free_pages = buddy_system_free_pages,
     .nr_free_pages = buddy_system_nr_free_pages,
     .check = buddy_system_check,
+
 };
