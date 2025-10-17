@@ -1,7 +1,7 @@
 #include <pmm.h>
 #include <list.h>
 #include <string.h>
-#include <buddy_system_pmm.h>
+#include <buddy_system_list_pmm.h>
 #include <stdio.h>
 
 /*
@@ -41,7 +41,7 @@ static inline size_t order2pages(int order) {
  * 将每个阶的空闲链表初始化为空，并将空闲块计数器清零。
  */
 static void
-buddy_system_init(void) {
+buddy_system_list_init(void) {
     for (int i = 0; i <= MAX_ORDER; i++) {
         // 初始化双向链表，使其头节点的 prev 和 next 都指向自身。
         list_init(&free_list(i));
@@ -60,7 +60,7 @@ buddy_system_init(void) {
  * 这是一个自顶向下（Top-Down）的分解过程。
  */
 static void
-buddy_system_init_memmap(struct Page *base, size_t n) {
+buddy_system_list_init_memmap(struct Page *base, size_t n) {
     // 确保传入的内存大小是有效的。
     assert(n > 0);
 
@@ -129,7 +129,7 @@ buddy_system_init_memmap(struct Page *base, size_t n) {
  * 4. 返回这个 order 阶的块，分裂出的其他伙伴块被加入对应阶的空闲链表。
  */
 static struct Page *
-buddy_system_alloc_pages(size_t n) {
+buddy_system_list_alloc_pages(size_t n) {
     assert(n > 0);
 
     /* 步骤 1: 计算满足 n 页需求的最小阶 order (2^order >= n)。 */
@@ -207,7 +207,7 @@ buddy_system_alloc_pages(size_t n) {
  * 5. 如果伙伴块不可合并，则停止合并，将当前块加入对应阶的空闲链表。
  */
 static void
-buddy_system_free_pages(struct Page *base, size_t n) {
+buddy_system_list_free_pages(struct Page *base, size_t n) {
     assert(n > 0);
 
     /* 步骤 1: 计算被释放块的阶 order。 */
@@ -288,7 +288,7 @@ buddy_system_free_pages(struct Page *base, size_t n) {
  * 此函数会遍历每一阶的空闲链表，将（块数 * 每块的页数）累加起来。
  */
 static size_t
-buddy_system_nr_free_pages(void) {
+buddy_system_list_nr_free_pages(void) {
     size_t sum = 0;
     for (int i = 0; i <= MAX_ORDER; i++) {
         // 累加：该阶的空闲块数量 * 该阶每个块的页数。
@@ -303,78 +303,78 @@ buddy_system_nr_free_pages(void) {
  * 通过一系列的分配、释放、分裂、合并等场景来验证算法的鲁棒性和正确性。
  */
 static void
-buddy_system_check(void) {
+buddy_system_list_check(void) {
     // 记录初始空闲页总数
-    size_t total = buddy_system_nr_free_pages();
+    size_t total = buddy_system_list_nr_free_pages();
     assert(total > 0);
 
     // === 1. 基本分配测试 ===
-    struct Page *p0 = buddy_system_alloc_pages(1);
+    struct Page *p0 = buddy_system_list_alloc_pages(1);
     assert(p0 != NULL);
-    struct Page *p1 = buddy_system_alloc_pages(2);
+    struct Page *p1 = buddy_system_list_alloc_pages(2);
     assert(p1 != NULL);
-    struct Page *p2 = buddy_system_alloc_pages(4);
+    struct Page *p2 = buddy_system_list_alloc_pages(4);
     assert(p2 != NULL);
-    size_t left = buddy_system_nr_free_pages();
+    size_t left = buddy_system_list_nr_free_pages();
     assert(left < total);
 
     // === 2. 回收部分块，检查是否能恢复到初始状态 ===
-    buddy_system_free_pages(p0, 1);
-    buddy_system_free_pages(p1, 2);
-    buddy_system_free_pages(p2, 4);
-    assert(buddy_system_nr_free_pages() == total);
+    buddy_system_list_free_pages(p0, 1);
+    buddy_system_list_free_pages(p1, 2);
+    buddy_system_list_free_pages(p2, 4);
+    assert(buddy_system_list_nr_free_pages() == total);
 
     // === 3. 分裂测试 ===
     // 分配一个大块，再分配两个小块，测试大块是否被正确分裂
-    struct Page *p_big = buddy_system_alloc_pages(8);
+    struct Page *p_big = buddy_system_list_alloc_pages(8);
     assert(p_big != NULL);
-    struct Page *p_small1 = buddy_system_alloc_pages(1);
-    struct Page *p_small2 = buddy_system_alloc_pages(1);
+    struct Page *p_small1 = buddy_system_list_alloc_pages(1);
+    struct Page *p_small2 = buddy_system_list_alloc_pages(1);
     assert(p_small1 && p_small2);
-    buddy_system_free_pages(p_small1, 1);
-    buddy_system_free_pages(p_small2, 1);
-    buddy_system_free_pages(p_big, 8);
-    assert(buddy_system_nr_free_pages() == total);
+    buddy_system_list_free_pages(p_small1, 1);
+    buddy_system_list_free_pages(p_small2, 1);
+    buddy_system_list_free_pages(p_big, 8);
+    assert(buddy_system_list_nr_free_pages() == total);
 
     // === 4. 合并测试 ===
     // 分配两个相邻的小块，然后释放它们，检查是否能正确合并成一个大块
-    struct Page *a = buddy_system_alloc_pages(2);
-    struct Page *b = buddy_system_alloc_pages(2);
+    struct Page *a = buddy_system_list_alloc_pages(2);
+    struct Page *b = buddy_system_list_alloc_pages(2);
     assert(a && b);
-    buddy_system_free_pages(a, 2);
-    buddy_system_free_pages(b, 2);
-    assert(buddy_system_nr_free_pages() == total);
+    buddy_system_list_free_pages(a, 2);
+    buddy_system_list_free_pages(b, 2);
+    assert(buddy_system_list_nr_free_pages() == total);
 
     // === 5. 连续分配耗尽测试 ===
     // 循环分配最小的块
     struct Page *allocs[1 << MAX_ORDER];
     int count = 0;
     for(int i = 0; i < (1 << MAX_ORDER); i++) {
-        struct Page *p = buddy_system_alloc_pages(1);
+        struct Page *p = buddy_system_list_alloc_pages(1);
         if (!p) break;
         allocs[count++] = p;
     }
-    assert(buddy_system_nr_free_pages() == 0);
+    assert(buddy_system_list_nr_free_pages() == 0);
     // 全部释放，检查内存是否完全恢复
     for (int i = 0; i < count; i++) {
-        buddy_system_free_pages(allocs[i], 1);
+        buddy_system_list_free_pages(allocs[i], 1);
     }
-    assert(buddy_system_nr_free_pages() == total);
+    assert(buddy_system_list_nr_free_pages() == total);
 
     // === 6. 随机顺序释放测试 ===
     // 测试乱序释放是否也能正确合并
-    struct Page *x1 = buddy_system_alloc_pages(1);
-    struct Page *x2 = buddy_system_alloc_pages(1);
-    struct Page *x3 = buddy_system_alloc_pages(2);
+    struct Page *x1 = buddy_system_list_alloc_pages(1);
+    struct Page *x2 = buddy_system_list_alloc_pages(1);
+    struct Page *x3 = buddy_system_list_alloc_pages(2);
     assert(x1 && x2 && x3);
-    buddy_system_free_pages(x2, 1);
-    buddy_system_free_pages(x1, 1);
-    buddy_system_free_pages(x3, 2);
-    assert(buddy_system_nr_free_pages() == total);
+    buddy_system_list_free_pages(x2, 1);
+    buddy_system_list_free_pages(x1, 1);
+    buddy_system_list_free_pages(x3, 2);
+    assert(buddy_system_list_nr_free_pages() == total);
 
     // === 7. 边界条件测试 ===
     // 测试分配一个过大的块，预期失败并返回 NULL
-    struct Page *too_big = buddy_system_alloc_pages(1 << (MAX_ORDER + 1));
+    struct Page *too_big = buddy_system_list_alloc_pages(1 << (MAX_ORDER + 1));
     assert(too_big == NULL);
 }
 
@@ -383,14 +383,14 @@ buddy_system_check(void) {
  * 这个结构体将伙伴系统的所有操作函数封装起来，提供给上层物理内存管理框架（PMM）统一调用。
  * PMM 框架通过这个结构体，可以像使用插件一样切换不同的内存分配算法（如 best-fit, buddy system 等）。
  */
-const struct pmm_manager buddy_system_pmm_manager = {
-    .name = "buddy_system_pmm_manager",
-    .init = buddy_system_init,
-    .init_memmap = buddy_system_init_memmap,
-    .alloc_pages = buddy_system_alloc_pages,
-    .free_pages = buddy_system_free_pages,
-    .nr_free_pages = buddy_system_nr_free_pages,
-    .check = buddy_system_check,
+const struct pmm_manager buddy_system_list_pmm_manager = {
+    .name = "buddy_system_list_pmm_manager",
+    .init = buddy_system_list_init,
+    .init_memmap = buddy_system_list_init_memmap,
+    .alloc_pages = buddy_system_list_alloc_pages,
+    .free_pages = buddy_system_list_free_pages,
+    .nr_free_pages = buddy_system_list_nr_free_pages,
+    .check = buddy_system_list_check,
 
 };
 
