@@ -33,6 +33,19 @@ struct pmm_manager {
 
 extern const struct pmm_manager *pmm_manager;
 
+// ------------
+// 新的 pmm_cache_manager 结构，用于按字节分配（slub）
+struct pmm_cache_manager {
+    const char *name;
+    void (*init)(void);
+    void *(*kmalloc)(size_t size);
+    void (*kfree)(void *ptr);
+    void (*check)(void);
+};
+
+extern const struct pmm_cache_manager *pmm_cache_manager;
+// ------------
+
 void pmm_init(void);
 
 struct Page *alloc_pages(size_t n);
