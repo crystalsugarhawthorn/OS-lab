@@ -2,7 +2,6 @@
 #include <best_fit_pmm.h>
 #include <buddy_system_list_pmm.h>
 #include <buddy_system_array_pmm.h>
-#include <slub_pmm.h>
 #include <defs.h>
 #include <error.h>
 #include <memlayout.h>
@@ -13,6 +12,10 @@
 #include <string.h>
 #include <riscv.h>
 #include <dtb.h>
+
+// ------------
+#include <slub_pmm.h>
+// ------------
 
 // virtual address of physical page array
 struct Page *pages;
@@ -45,10 +48,12 @@ static void init_pmm_manager(void) {
     cprintf("memory management: %s\n", pmm_manager->name);
     pmm_manager->init();
 
+    // ------------
     // slub 分配器
     pmm_cache_manager = &slub_manager;
     pmm_cache_manager->init();
     cprintf("cache memory management: %s\n", pmm_cache_manager->name);
+    // ------------
 }
 
 // init_memmap - call pmm->init_memmap to build Page struct for free memory
@@ -73,6 +78,7 @@ size_t nr_free_pages(void) {
     return pmm_manager->nr_free_pages();
 }
 
+// ------------
 // 添加slub分配bytes的接口
 void *slub_kmalloc(size_t size) {
     return pmm_cache_manager->kmalloc(size);
@@ -81,6 +87,7 @@ void *slub_kmalloc(size_t size) {
 void slub_kfree(void *ptr) {
     return pmm_cache_manager->kfree(ptr);
 }
+// ------------
 
 static void page_init(void) {
     va_pa_offset = PHYSICAL_MEMORY_OFFSET;
@@ -146,6 +153,9 @@ void pmm_init(void) {
 static void check_alloc_page(void) {
     pmm_manager->check();
     cprintf("check_alloc_page() succeeded!\n");
+
+    // ------------
     pmm_cache_manager->check();
     cprintf("check_alloc_bytes() succeeded!\n");
+    // ------------
 }

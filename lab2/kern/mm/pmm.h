@@ -33,6 +33,7 @@ struct pmm_manager {
 
 extern const struct pmm_manager *pmm_manager;
 
+// ------------
 // 新的 pmm_cache_manager 结构，用于按字节分配（slub）
 struct pmm_cache_manager {
     const char *name;
@@ -43,6 +44,7 @@ struct pmm_cache_manager {
 };
 
 extern const struct pmm_cache_manager *pmm_cache_manager;
+// ------------
 
 void pmm_init(void);
 
