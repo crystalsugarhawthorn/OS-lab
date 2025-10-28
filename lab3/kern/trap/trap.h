@@ -40,10 +40,10 @@ struct pushregs {
 
 struct trapframe {
     struct pushregs gpr;
-    uintptr_t status;
-    uintptr_t epc;
-    uintptr_t badvaddr;
-    uintptr_t cause;
+    uintptr_t status;        // 状态标志位
+    uintptr_t epc;           // 被中断地址
+    uintptr_t badvaddr;     // 访问错误地址
+    uintptr_t cause;        // 中断原因
 };
 
 void trap(struct trapframe *tf);
