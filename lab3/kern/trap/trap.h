@@ -42,7 +42,7 @@ struct trapframe {
     struct pushregs gpr;
     uintptr_t status;        // 状态标志位
     uintptr_t epc;           // 被中断地址
-    uintptr_t badvaddr;     // 访问错误地址
+    uintptr_t badvaddr;     // 存储stval寄存器的值，缺页异常时为访问的虚拟地址；非法指令异常时为异常指令的二进制编码
     uintptr_t cause;        // 中断原因
 };
 

@@ -36,11 +36,11 @@ int kern_init(void) {
     intr_enable();  // enable irq interrupt
 
     // // 插入 ebreak 指令测试断点异常处理
-    // asm volatile("ebreak");
+    asm volatile("ebreak");
     
     // // 插入非法指令测试非法指令异常处理
     // // 使用 .word 来定义一个非法指令操作码
-    // asm volatile(".word 0x00000000"); // 简单的非法指令
+    asm volatile(".word 0x00000000"); // 简单的非法指令
 
     /* do nothing */
     while (1)
