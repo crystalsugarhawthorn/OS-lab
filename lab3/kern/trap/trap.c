@@ -45,12 +45,24 @@ void idt_init(void) {
      * check the libs/x86.h to know more.
      *     Notice: the argument of lidt is idt_pd. try to find it!
      */
+    /* （1）对于每个中断服务例程（ISR）的入口地址在哪里？
+     * 所有ISR的入口地址都存储在__vectors.c中，其中__vectors[]是一个uintptr_t数组。
+     * 你可以在kern/trap/vector.S中找到这个数组。
+     * 你可以使用extern uintptr_t __vectors[];来定义这个外部变量，稍后将使用它。
+     * （2）现在你应该在中断描述符表（IDT）中设置每个ISR的条目。
+     * 你可以在本文件中看到idt[256]。你可以使用SETGATE宏来设置IDT中的每个条目。
+     * （3）在设置完IDT的内容后，你应该让CPU知道IDT的位置。
+     * 你不知道lidt指令的含义吗？试着谷歌一下，然后在libs/x86.h中了解更多信息。
+     * 注意：lidt指令的参数是idt_pd。试着找到它！
+     */
 
     extern void __alltraps(void);
     /* Set sup0 scratch register to 0, indicating to exception vector
        that we are presently executing in the kernel */
+    /* 设置sup0寄存器为0，表示我们当前正在执行内核中的异常向量 */
     write_csr(sscratch, 0);
     /* Set the exception vector address */
+    /* 设置异常向量地址 */
     write_csr(stvec, &__alltraps);
 }
 
@@ -234,6 +246,11 @@ static inline void trap_dispatch(struct trapframe *tf) {
  * returns,
  * the code in kern/trap/trapentry.S restores the old CPU state saved in the
  * trapframe and then uses the iret instruction to return from the exception.
+ * */
+/* *
+ * trap - 处理或分发异常/中断。当trap()返回时，
+ * kern/trap/trapentry.S中的代码将恢复在trapframe中保存的旧CPU状态，
+ * 然后使用iret指令返回异常。
  * */
 void trap(struct trapframe *tf) {
     // dispatch based on what type of trap occurred
