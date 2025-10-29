@@ -62,7 +62,7 @@ void idt_init(void) {
     /* 设置sup0寄存器为0，表示我们当前正在执行内核中的异常向量 */
     write_csr(sscratch, 0);
     /* Set the exception vector address */
-    /* 设置异常向量地址 */
+    /* 设置异常向量地址，即发生异常时的处理函数 */
     write_csr(stvec, &__alltraps);
 }
 
@@ -188,26 +188,26 @@ void exception_handler(struct trapframe *tf) {
             break;
         case CAUSE_ILLEGAL_INSTRUCTION:
              // 非法指令异常处理
-             /* LAB3 CHALLENGE3   YOUR CODE : 2310648 */
+             /* LAB3 CHALLENGE3   YOUR CODE : 2310648 2313892*/
             /*(1)输出指令异常类型（ Illegal instruction）
              *(2)输出异常指令地址
              *(3)更新 tf->epc寄存器
             */
             cprintf("Exception type: Illegal instruction\n");
             cprintf("Illegal instruction caught at 0x%08x\n", tf->epc);
-            tf->epc += ((tf->badvaddr & 0x3) == 0x3) ? 2 : 4; // advance pc to next instruction
+            // 判断指令末两位是否为11，如果是则为4字节指令，否则为2字节指令
+            tf->epc += ((tf->badvaddr & 0x3) != 0x3) ? 2 : 4; // advance pc to next instruction
             break;
         case CAUSE_BREAKPOINT:
             //断点异常处理
-            /* LAB3 CHA
-            LLENGE3   YOUR CODE : 2310648 */
+            /* LAB3 CHALLENGE3   YOUR CODE : 2310648 2313892*/
             /*(1)输出指令异常类型（ breakpoint）
              *(2)输出异常指令地址
              *(3)更新 tf->epc寄存器
             */
             cprintf("Exception type: breakpoint\n");
             cprintf("ebreak caught at 0x%08x\n", tf->epc);
-            tf->epc += ((tf->badvaddr & 0x3) == 0x3) ? 2 : 4; // advance pc to next instruction
+            tf->epc += ((tf->badvaddr & 0x3) != 0x3) ? 2 : 4; // advance pc to next instruction
             break;
         case CAUSE_MISALIGNED_LOAD:
             break;
