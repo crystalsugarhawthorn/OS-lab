@@ -82,13 +82,14 @@ void forkrets(struct trapframe *tf);
 void switch_to(struct context *from, struct context *to);
 
 // alloc_proc - alloc a proc_struct and init all fields of proc_struct
+// 分配一个 proc_struct 并初始化
 static struct proc_struct *
 alloc_proc(void)
 {
     struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
     if (proc != NULL)
     {
-        // LAB4:EXERCISE1 YOUR CODE
+        // LAB4:EXERCISE1 YOUR CODE 2313892 2313851
         /*
          * below fields in proc_struct need to be initialized
          *       enum proc_state state;                      // Process state
@@ -104,7 +105,18 @@ alloc_proc(void)
          *       uint32_t flags;                             // Process flag
          *       char name[PROC_NAME_LEN + 1];               // Process name
          */
-        
+        proc->state = PROC_UNINIT;
+        proc->pid = -1;   // 初始化为 -1，表示尚未分配 PID
+        proc->runs = 0;
+        proc->kstack = 0;
+        proc->need_resched = 0;
+        proc->parent = NULL;
+        proc->mm = NULL;
+        memset(&(proc->context), 0, sizeof(struct context));
+        proc->tf = NULL;
+        proc->pgdir = boot_pgdir_pa;
+        proc->flags = 0;
+        memset(proc->name, 0, PROC_NAME_LEN);
     }
     return proc;
 }
@@ -175,7 +187,7 @@ void proc_run(struct proc_struct *proc)
 {
     if (proc != current)
     {
-        // LAB4:EXERCISE3 YOUR CODE
+        // LAB4:EXERCISE3 YOUR CODE 2313892 2313851
         /*
          * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.
          * MACROs or Functions:
@@ -184,7 +196,15 @@ void proc_run(struct proc_struct *proc)
          *   lsatp():                   Modify the value of satp register
          *   switch_to():              Context switching between two processes
          */
-
+        bool intr_flag;
+        struct proc_struct *prev = current;
+        local_intr_save(intr_flag);
+        {
+            current = proc;
+            lsatp(proc->pgdir);
+            switch_to(&(prev->context), &(proc->context));
+        }
+        local_intr_restore(intr_flag);
     }
 }
 
@@ -297,7 +317,7 @@ int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
         goto fork_out;
     }
     ret = -E_NO_MEM;
-    // LAB4:EXERCISE2 YOUR CODE
+    // LAB4:EXERCISE2 YOUR CODE 2313892 2313851
     /*
      * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.
      * MACROs or Functions:
@@ -315,13 +335,37 @@ int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
      *   nr_process:   the number of process set
      */
 
-    //    1. call alloc_proc to allocate a proc_struct
-    //    2. call setup_kstack to allocate a kernel stack for child process
-    //    3. call copy_mm to dup OR share mm according clone_flag
-    //    4. call copy_thread to setup tf & context in proc_struct
-    //    5. insert proc_struct into hash_list && proc_list
-    //    6. call wakeup_proc to make the new child process RUNNABLE
-    //    7. set ret vaule using child proc's pid
+    // 1. call alloc_proc to allocate a proc_struct
+    if ((proc = alloc_proc()) == NULL) {
+        goto fork_out;
+    }
+
+    proc->parent = current;
+
+    // 2. call setup_kstack to allocate a kernel stack for child process
+    if (setup_kstack(proc) != 0) {
+        goto bad_fork_cleanup_proc;
+    }
+
+    // 3. call copy_mm to dup OR share mm according clone_flag
+    if (copy_mm(clone_flags, proc) != 0) {
+        goto bad_fork_cleanup_kstack;
+    }
+
+    // 4. call copy_thread to setup tf & context in proc_struct
+    copy_thread(proc, stack, tf);
+
+    // 5. insert proc_struct into hash_list && proc_list
+    proc->pid = get_pid();
+    hash_proc(proc);
+    list_add(&proc_list, &(proc->list_link));
+    nr_process++;
+
+    // 6. call wakeup_proc to make the new child process RUNNABLE
+    wakeup_proc(proc);
+
+    // 7. set ret vaule using child proc's pid
+    ret = proc->pid;
     
 fork_out:
     return ret;
