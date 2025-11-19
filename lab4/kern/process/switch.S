@@ -1,7 +1,8 @@
 #include <riscv.h>
 
 .text
-# void switch_to(struct proc_struct* from, struct proc_struct* to)
+# void switch_to(struct context* from, struct context* to)
+# a0 -- from, a1 -- to
 .globl switch_to
 switch_to:
     # save from's registers
