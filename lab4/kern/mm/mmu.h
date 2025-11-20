@@ -18,13 +18,24 @@
 // To construct a linear address la from PDX(la), PTX(la), and PGOFF(la),
 // use PGADDR(PDX(la), PTX(la), PGOFF(la)).
 
-// RISC-V uses 32-bit virtual address to access 34-bit physical address!
-// Sv32 page table entry:
-// +---------12----------+--------10-------+---2----+-------8-------+
-// |       PPN[1]        |      PPN[0]     |Reserved|D|A|G|U|X|W|R|V|
-// +---------12----------+-----------------+--------+---------------+
+// RISC-V uses 39-bit virtual address to access 56-bit physical address!
+// Sv39 virtual address:
+// +----9----+----9---+----9---+---12--+
+// |  VPN[2] | VPN[1] | VPN[0] | PGOFF |
+// +---------+----+---+--------+-------+
+//
+// Sv39 physical address:
+// +----26---+----9---+----9---+---12--+
+// |  PPN[2] | PPN[1] | PPN[0] | PGOFF |
+// +---------+----+---+--------+-------+
+//
+// Sv39 page table entry:
+// +----26---+----9---+----9---+---2----+-------8-------+
+// |  PPN[2] | PPN[1] | PPN[0] |Reserved|D|A|G|U|X|W|R|V|
+// +---------+----+---+--------+--------+---------------+
 
 // page directory index
+// 只考虑 9 位，要与 0x1FF
 #define PDX1(la) ((((uintptr_t)(la)) >> PDX1SHIFT) & 0x1FF)
 #define PDX0(la) ((((uintptr_t)(la)) >> PDX0SHIFT) & 0x1FF)
 
@@ -35,12 +46,18 @@
 #define PPN(la) (((uintptr_t)(la)) >> PTXSHIFT)
 
 // offset in page
+// 页内偏移，只考虑低 12 位，要与 0xFFF
 #define PGOFF(la) (((uintptr_t)(la)) & 0xFFF)
 
 // construct linear address from indexes and offset
+// 通过高到低三级页表的页码和页内偏移构造线性地址（PDX1, PDX0和PTX、 offset）
 #define PGADDR(d1, d0, t, o) ((uintptr_t)((d1) << PDX1SHIFT |(d0) << PDX0SHIFT | (t) << PTXSHIFT | (o)))
 
 // address in page table or page directory entry
+// 提取 PTE 或 PDE 中的物理页号并转换为物理地址
+// 屏蔽标志位，然后左移2位，与物理地址的页号对齐
+// 因此返回的实际上是页表项的物理地址
+// 这里 PDE_ADDR 和 PTE_ADDR 是一样的
 #define PTE_ADDR(pte)   (((uintptr_t)(pte) & ~0x3FF) << (PTXSHIFT - PTE_PPN_SHIFT))
 #define PDE_ADDR(pde)   PTE_ADDR(pde)
 

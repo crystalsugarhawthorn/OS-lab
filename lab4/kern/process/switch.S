@@ -37,4 +37,6 @@ switch_to:
     LOAD s10, 12*REGBYTES(a1)
     LOAD s11, 13*REGBYTES(a1)
 
+    # ra被LOAD为了forkret函数地址
+    # ret后将从那儿开始执行
     ret
