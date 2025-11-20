@@ -107,6 +107,9 @@ __alltraps:
 __trapret:
     RESTORE_ALL
     # go back from supervisor call
+    # 因为epc被设置为了kernel_thread_entry，接下来将执行
+    # s0寄存器里放的是新进程要执行的函数，s1寄存器里放的是传给函数的参数
+    # 这样就能返回用户态，执行线程函数了
     sret
  
     .globl forkrets

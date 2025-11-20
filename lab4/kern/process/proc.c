@@ -83,6 +83,7 @@ void switch_to(struct context *from, struct context *to);
 
 // alloc_proc - alloc a proc_struct and init all fields of proc_struct
 // 分配一个 proc_struct 并初始化
+// 这部分可参考 proc_init 中对 proc_struct 的判断
 static struct proc_struct *
 alloc_proc(void)
 {
@@ -94,14 +95,15 @@ alloc_proc(void)
          * below fields in proc_struct need to be initialized
          *       enum proc_state state;                      // Process state
          *       int pid;                                    // Process ID
-         *       int runs;                                   // the running times of Proces
-         *       uintptr_t kstack;                           // Process kernel stack
-         *       volatile bool need_resched;                 // bool value: need to be rescheduled to release CPU?
+         *       int runs;                                   // the running times of Proces （运行次数）
+         *       uintptr_t kstack;                           // Process kernel stack （内核堆栈，指向该进程的内核栈顶，用于执行内核代码）
+         *       volatile bool need_resched;                 // bool value: need to be rescheduled to release CPU? 
+         *                                                   //（是否需要调度，为true时，调度器会重新调度该进程；volatile确保确保编译器不会优化对该变量的读写）
          *       struct proc_struct *parent;                 // the parent process
-         *       struct mm_struct *mm;                       // Process's memory management field
-         *       struct context context;                     // Switch here to run process
+         *       struct mm_struct *mm;                       // Process's memory management field （内存管理结构指针）
+         *       struct context context;                     // Switch here to run process （进程上下文）
          *       struct trapframe *tf;                       // Trap frame for current interrupt
-         *       uintptr_t pgdir;                            // the base addr of Page Directroy Table(PDT)
+         *       uintptr_t pgdir;                            // the base addr of Page Directroy Table(PDT)（页目录表的基地址）
          *       uint32_t flags;                             // Process flag
          *       char name[PROC_NAME_LEN + 1];               // Process name
          */
@@ -246,18 +248,24 @@ find_proc(int pid)
 // kernel_thread - create a kernel thread using "fn" function
 // NOTE: the contents of temp trapframe tf will be copied to
 //       proc->tf in do_fork-->copy_thread function
+// 创建内核线程
 int kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags)
 {
     struct trapframe tf;
     memset(&tf, 0, sizeof(struct trapframe));
     tf.gpr.s0 = (uintptr_t)fn;
     tf.gpr.s1 = (uintptr_t)arg;
+
+    // SSTATUS_SPP：Supervisor Previous Privilege（设置为 supervisor 模式，因为这是一个内核线程）
+    // SSTATUS_SPIE：Supervisor Previous Interrupt Enable（设置为启用中断，因为这是一个内核线程）
+    // SSTATUS_SIE：Supervisor Interrupt Enable（设置为禁用中断，因为我们不希望该线程被中断）
     tf.status = (read_csr(sstatus) | SSTATUS_SPP | SSTATUS_SPIE) & ~SSTATUS_SIE;
     tf.epc = (uintptr_t)kernel_thread_entry;
     return do_fork(clone_flags | CLONE_VM, 0, &tf);
 }
 
 // setup_kstack - alloc pages with size KSTACKPAGE as process kernel stack
+// 分配进程的内核堆栈，大小为 KSTACKPAGE 页
 static int
 setup_kstack(struct proc_struct *proc)
 {
@@ -271,6 +279,7 @@ setup_kstack(struct proc_struct *proc)
 }
 
 // put_kstack - free the memory space of process kernel stack
+// 释放进程的内核堆栈空间
 static void
 put_kstack(struct proc_struct *proc)
 {
@@ -289,16 +298,23 @@ copy_mm(uint32_t clone_flags, struct proc_struct *proc)
 
 // copy_thread - setup the trapframe on the  process's kernel stack top and
 //             - setup the kernel entry point and stack of process
+// 在操作系统中，进程的创建通常是通过“复制”现有进程的状态来完成的
+// 新进程创建时，我们需要复制当前进程的中断帧，以确保新进程能够继承父进程的状态
+// 第一个进程的中断帧需要依靠 kernel_thread 函数来实现
 static void
 copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf)
 {
+    // 将 tf 分配在内核栈最高地址处
     proc->tf = (struct trapframe *)(proc->kstack + KSTACKSIZE - sizeof(struct trapframe));
     *(proc->tf) = *tf;
 
     // Set a0 to 0 so a child process knows it's just forked
+    // a0表示系统调用返回值，子进程通过这个值来判断自己是刚刚被 fork 出来的
     proc->tf->gpr.a0 = 0;
+    // esp为用户栈指针，如果为0，表示创建内核线程
     proc->tf->gpr.sp = (esp == 0) ? (uintptr_t)proc->tf : esp;
 
+    // ra表示返回地址，这里设置为 forkret 函数的地址，调用 forkrets(trapentry.S) 
     proc->context.ra = (uintptr_t)forkret;
     proc->context.sp = (uintptr_t)(proc->tf);
 }
@@ -308,10 +324,12 @@ copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf)
  * @stack:       the parent's user stack pointer. if stack==0, It means to fork a kernel thread.
  * @tf:          the trapframe info, which will be copied to child process's proc->tf
  */
+// 从当前进程 current 创建一个新进程
 int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
 {
     int ret = -E_NO_FREE_PROC;
     struct proc_struct *proc;
+    // 判断是否超过最大进程数
     if (nr_process >= MAX_PROCESS)
     {
         goto fork_out;
@@ -353,6 +371,7 @@ int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
     }
 
     // 4. call copy_thread to setup tf & context in proc_struct
+    // 这里的stack初始值为0，表示创建内核线程
     copy_thread(proc, stack, tf);
 
     // 5. insert proc_struct into hash_list && proc_list
@@ -436,6 +455,8 @@ void proc_init(void)
 
     current = idleproc;
 
+    // initproc 则通过 kernel_thread 创建，是第一个实际执行任务的内核线程
+    // 先通过kernel_thread创建init_main线程（返回pid），然后通过find_proc找到对应的proc_struct
     int pid = kernel_thread(init_main, "Hello world!!", 0);
     if (pid <= 0)
     {

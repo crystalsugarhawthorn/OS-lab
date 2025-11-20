@@ -1,7 +1,8 @@
 #include <riscv.h>
 
 .text
-# void switch_to(struct proc_struct* from, struct proc_struct* to)
+# void switch_to(struct context* from, struct context* to)
+# a0 -- from, a1 -- to
 .globl switch_to
 switch_to:
     # save from's registers
@@ -36,4 +37,6 @@ switch_to:
     LOAD s10, 12*REGBYTES(a1)
     LOAD s11, 13*REGBYTES(a1)
 
+    # ra被LOAD为了forkret函数地址
+    # ret后将从那儿开始执行
     ret

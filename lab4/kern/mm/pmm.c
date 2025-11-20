@@ -220,8 +220,12 @@ void pmm_init(void)
 //  la:     the linear address need to map
 //  create: a logical value to decide if alloc a page for PT
 // return vaule: the kernel virtual address of this pte
+// 给定一个顶级页表的虚拟地址 (pgdir) 和一个待查找的虚拟地址 (la)
+// 在多级页表中找到（必要时创建）负责映射 la 的那个最终的页表项（PTE）的地址
+// 如果中间的页目录或页表不存在，并且 create 标志为 true，则创建它们。
 pte_t *get_pte(pde_t *pgdir, uintptr_t la, bool create)
 {
+    // 找到最高级页表项
     pde_t *pdep1 = &pgdir[PDX1(la)];
     if (!(*pdep1 & PTE_V))
     {
@@ -235,6 +239,9 @@ pte_t *get_pte(pde_t *pgdir, uintptr_t la, bool create)
         memset(KADDR(pa), 0, PGSIZE);
         *pdep1 = pte_create(page2ppn(page), PTE_U | PTE_V);
     }
+    // 找到次高级页表项
+    // PDE_ADDR(*pdep1) 提取出次级页表的物理地址，再通过KADDR转换为内核虚拟地址
+    // 最后强制转换为pte_t*类型，并通过索引PDX0(la)找到对应的页表项
     pde_t *pdep0 = &((pte_t *)KADDR(PDE_ADDR(*pdep1)))[PDX0(la)];
     if (!(*pdep0 & PTE_V))
     {
@@ -271,6 +278,7 @@ struct Page *get_page(pde_t *pgdir, uintptr_t la, pte_t **ptep_store)
 // note: PT is changed, so the TLB need to be invalidate
 static inline void page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep)
 {
+    // 检查是否存在映射
     if (*ptep & PTE_V)
     { //(1) check if this page table entry is
         struct Page *page =
@@ -288,8 +296,10 @@ static inline void page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep)
 
 // page_remove - free an Page which is related linear address la and has an
 // validated pte
+// 删除线性地址 la 对应的页表项及其映射的物理页面
 void page_remove(pde_t *pgdir, uintptr_t la)
 {
+    // 获取页表项地址
     pte_t *ptep = get_pte(pgdir, la, 0);
     if (ptep != NULL)
     {
@@ -305,22 +315,25 @@ void page_remove(pde_t *pgdir, uintptr_t la)
 //  perm:  the permission of this Page which is setted in related pte
 // return value: always 0
 // note: PT is changed, so the TLB need to be invalidate
+// 为一个物理页面 (page) 在指定的页目录 (pgdir) 中插入一个映射，使其映射到给定的线性地址 (la)
 int page_insert(pde_t *pgdir, struct Page *page, uintptr_t la, uint32_t perm)
 {
+    // pgdir是页表基址(satp)，page对应物理页面，la是虚拟地址
+    // 创建一个新的页表项来映射给定的物理页面到指定的线性地址
     pte_t *ptep = get_pte(pgdir, la, 1);
     if (ptep == NULL)
     {
         return -E_NO_MEM;
     }
     page_ref_inc(page);
-    if (*ptep & PTE_V)
+    if (*ptep & PTE_V)  // 原先存在映射
     {
         struct Page *p = pte2page(*ptep);
-        if (p == page)
+        if (p == page) // 如果这个映射原先就有
         {
             page_ref_dec(page);
         }
-        else
+        else //如果原先这个虚拟地址映射到其他物理页面，那么需要删除映射
         {
             page_remove_pte(pgdir, la, ptep);
         }
