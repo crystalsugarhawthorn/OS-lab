@@ -135,7 +135,10 @@ void interrupt_handler(struct trapframe *tf)
             print_ticks();
             print_num++;
             ticks = 0;
+            assert(current != NULL);
+            current->need_resched = 1;
         }
+
         if (print_num == 10) {
             sbi_shutdown();
         }
