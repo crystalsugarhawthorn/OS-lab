@@ -136,7 +136,7 @@ void interrupt_handler(struct trapframe *tf)
             print_num++;
             ticks = 0;
             assert(current != NULL);
-            current->need_resched = 1;
+            current->need_resched = 1;// 让当前进程在时钟中断后重新调度
         }
 
         if (print_num == 10) {
