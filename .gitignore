@@ -9,3 +9,6 @@ lab4/bin/
 lab5/obj/
 lab5/bin/
 .vscode
+*.log
+*.in
+*.out
