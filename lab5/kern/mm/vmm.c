@@ -202,6 +202,94 @@ out:
     return ret;
 }
 
+int do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
+    int ret = -E_INVAL;
+    // 查找发生错误的地址属于哪个 VMA
+    struct vma_struct *vma = find_vma(mm, addr);
+
+    if (vma == NULL || vma->vm_start > addr) {
+        cprintf("do_pgfault failed: invalid addr 0x%x in mm.\n", addr);
+        goto failed;
+    }
+
+    // 检查 VMA 的权限
+    switch (error_code) {
+        case CAUSE_STORE_PAGE_FAULT:
+        case CAUSE_STORE_ACCESS:
+            if (!(vma->vm_flags & VM_WRITE)) {
+                cprintf("do_pgfault failed: write access failed @ 0x%x, flags = 0x%x.\n", addr, vma->vm_flags);
+                goto failed;
+            }
+            break;
+        case CAUSE_LOAD_PAGE_FAULT:
+            if (!(vma->vm_flags & VM_READ)) {
+                cprintf("do_pgfault failed: read access failed @ 0x%x, flags = 0x%x.\n", addr, vma->vm_flags);
+                goto failed;
+            }
+            break;
+        default:
+            // 其他类型的页错误暂不处理
+            cprintf("do_pgfault failed: unknown cause %d.\n", error_code);
+            goto failed;
+    }
+
+    uint32_t perm = PTE_U;
+    if (vma->vm_flags & VM_WRITE) {
+        perm |= PTE_W | PTE_R;
+    }
+
+    addr = ROUNDDOWN(addr, PGSIZE);
+
+    ret = -E_NO_MEM;
+
+    pte_t *ptep = NULL;
+    // 查找或创建页表项
+    if ((ptep = get_pte(mm->pgdir, addr, 1)) == NULL) {
+        cprintf("get_pte in do_pgfault failed.\n");
+        goto failed;
+    }
+
+    // 如果页还未被映射 (PTE_V = 0)，这是一个真正的缺页
+    if (*ptep == 0) {
+        if (pgdir_alloc_page(mm->pgdir, addr, perm) == NULL) {
+            cprintf("pgdir_alloc_page in do_pgfault failed.\n");
+            goto failed;
+        }
+    }
+    // 如果页存在但不可写 (PTE_V = 1, PTE_W = 0)，这是 COW 的情况
+    else {
+        struct Page *page = pte2page(*ptep);
+        // 检查引用计数
+        if (page_ref(page) > 1) {
+            // 引用计数 > 1，需要复制页面
+            struct Page *newpage;
+            if ((newpage = alloc_page()) == NULL) {
+                cprintf("alloc_page in do_pgfault failed.\n");
+                goto failed;
+            }
+            // 拷贝旧页面的内容到新页面
+            memcpy(page2kva(newpage), page2kva(page), PGSIZE);
+            // 将新页面映射到当前地址，并设置可写权限
+            if (page_insert(mm->pgdir, newpage, addr, perm) != 0) {
+                cprintf("page_insert in do_pgfault failed.\n");
+                free_page(newpage);
+                goto failed;
+            }
+        } else {
+            // 引用计数 == 1，只有当前进程使用该页，直接添加写权限即可
+            if (page_insert(mm->pgdir, page, addr, perm) != 0) {
+                cprintf("page_insert in do_pgfault failed.\n");
+                goto failed;
+            }
+        }
+    }
+
+    ret = 0;
+
+failed:
+    return ret;
+}
+
 int dup_mmap(struct mm_struct *to, struct mm_struct *from)
 {
     assert(to != NULL && from != NULL);
