@@ -374,7 +374,7 @@ void exit_range(pde_t *pgdir, uintptr_t start, uintptr_t end)
  * CALL GRAPH: copy_mm-->dup_mmap-->copy_range
  */
 int copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end,
-               bool share)
+               bool share) // 根据share参数决定是复制还是共享
 {
     assert(start % PGSIZE == 0 && end % PGSIZE == 0);
     assert(USER_ACCESS(start, end));
@@ -399,12 +399,10 @@ int copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end,
             uint32_t perm = (*ptep & PTE_USER);
             // get page from ptep
             struct Page *page = pte2page(*ptep);
-            // alloc a page for process B
-            struct Page *npage = alloc_page();
             assert(page != NULL);
-            assert(npage != NULL);
             int ret = 0;
-            /* LAB5:EXERCISE2 YOUR CODE
+
+            /* LAB5:EXERCISE2 YOUR CODE 2313892 2310648
              * replicate content of page to npage, build the map of phy addr of
              * nage with the linear addr start
              *
@@ -422,11 +420,22 @@ int copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end,
              * (3) memory copy from src_kvaddr to dst_kvaddr, size is PGSIZE
              * (4) build the map of phy addr of nage with the linear addr start
              */
+            // 如果 share 为 true，执行COW
+            if (share) {
+                // 将父子进程的 PTE 都设置为只读
+                // 通过清除 PTE_W 标志位实现
+                page_insert(from, page, start, perm & ~PTE_W);
+                ret = page_insert(to, page, start, perm & ~PTE_W);
+            } else{
+                // alloc a page for process B
+                struct Page *npage = alloc_page();
+                assert(npage != NULL);
 
-            uintptr_t src_kvaddr = (uintptr_t)page2kva(page);
-            uintptr_t dst_kvaddr = (uintptr_t)page2kva(npage);
-            memcpy((void *)dst_kvaddr, (void *)src_kvaddr, PGSIZE);
-            ret = page_insert(to, npage, start, perm);
+                uintptr_t src_kvaddr = (uintptr_t)page2kva(page);
+                uintptr_t dst_kvaddr = (uintptr_t)page2kva(npage);
+                memcpy((void *)dst_kvaddr, (void *)src_kvaddr, PGSIZE);
+                ret = page_insert(to, npage, start, perm);
+            }
 
             assert(ret == 0);
         }
