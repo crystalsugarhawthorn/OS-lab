@@ -9,6 +9,10 @@
     # If coming from userspace, preserve the user stack pointer and load
     # the kernel stack pointer. If we came from the kernel, sscratch
     # will contain 0, and we should continue on the current stack.
+    # 用户空间的sp需要保留，存入ssratch
+    # 同时ssratch原先存储着内核栈，sp需要指向这里
+    # 内核空间的sscratch为0，需要使用当前堆栈
+    # 这里做了sp和sscratch的交换，因此若为内存空间需要交换回来
     csrrw sp, sscratch, sp
     bnez sp, _save_context
 
@@ -52,10 +56,11 @@ _save_context:
     # get sr, epc, tval, cause
     # Set sscratch register to 0, so that if a recursive exception
     # occurs, the exception vector knows it came from the kernel
+    # 如果之前是用户态产生的中断，用户栈指针从sscratch里挪到了s0寄存器， sscratch清零
     csrrw s0, sscratch, x0
     csrr s1, sstatus
     csrr s2, sepc
-    csrr s3, 0x143
+    csrr s3, 0x143  # stval
     csrr s4, scause
 
     STORE s0, 2*REGBYTES(sp)
@@ -115,7 +120,7 @@ _restore_context:
     LOAD x30, 30*REGBYTES(sp)
     LOAD x31, 31*REGBYTES(sp)
     # restore sp last
-    LOAD x2, 2*REGBYTES(sp)
+    LOAD x2, 2*REGBYTES(sp)  # 如果是用户态产生的中断，此时sp恢复为用户栈指针
     .endm
 
     .globl __alltraps

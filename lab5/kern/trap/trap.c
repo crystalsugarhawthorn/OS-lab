@@ -184,6 +184,8 @@ void exception_handler(struct trapframe *tf)
         break;
     case CAUSE_BREAKPOINT:
         cprintf("Breakpoint\n");
+        // kernel_execve 函数通过 ebreak 指令触发断点异常来返回内核，从而调用 syscall
+        // 并利用 a7 寄存器来区分是普通的断点异常还是 execve 返回
         if (tf->gpr.a7 == 10)
         {
             tf->epc += 4;
@@ -209,6 +211,7 @@ void exception_handler(struct trapframe *tf)
         break;
     case CAUSE_USER_ECALL:
         // cprintf("Environment call from U-mode\n");
+        // 对于ecall, 我们希望sepc寄存器要指向产生异常的指令(ecall)的下一条指令
         tf->epc += 4;
         syscall();
         break;

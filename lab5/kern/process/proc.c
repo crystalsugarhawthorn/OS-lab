@@ -536,11 +536,13 @@ int do_exit(int error_code)
     struct proc_struct *proc;
     local_intr_save(intr_flag);
     {
+        // 唤醒父进程
         proc = current->parent;
         if (proc->wait_state == WT_CHILD)
         {
             wakeup_proc(proc);
         }
+        // 将所有子进程移交给 init 进程
         while (current->cptr != NULL)
         {
             proc = current->cptr;
@@ -553,6 +555,7 @@ int do_exit(int error_code)
             }
             proc->parent = initproc;
             initproc->cptr = proc;
+            // 如果子进程已经是僵尸态，则唤醒 init 进程
             if (proc->state == PROC_ZOMBIE)
             {
                 if (initproc->wait_state == WT_CHILD)
