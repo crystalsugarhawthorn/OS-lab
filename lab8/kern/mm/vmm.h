@@ -66,6 +66,8 @@ bool copy_from_user(struct mm_struct *mm, void *dst, const void *src, size_t len
 bool copy_to_user(struct mm_struct *mm, void *dst, const void *src, size_t len);
 bool copy_string(struct mm_struct *mm, char *dst, const char *src, size_t maxn);
 
+int do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr);
+
 static inline int
 mm_count(struct mm_struct *mm)
 {
