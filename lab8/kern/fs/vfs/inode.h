@@ -166,6 +166,92 @@ void inode_kill(struct inode *node);
  *                      refers to. May destroy PATHNAME. Should increment
  *                      refcount on inode handed back.
  */
+/*
+ * 对 inode 的抽象操作。
+ *
+ * 这些操作以 VOP_FOO(inode, args) 的形式使用，它们是一些宏，
+ * 会展开为 inode->inode_ops->vop_foo(inode, args)。其中 “foo”
+ * 表示的操作包括：
+ *
+ *    vop_open        - 在对文件调用 open() 时被调用。可用于拒绝
+ *                      非法或不期望的打开模式。需要注意的是，即使
+ *                      文件并未真正被打开，某些操作也可能被执行。
+ *                      inode 不需要处理 O_CREAT、O_EXCL 或
+ *                      O_TRUNC，因为这些由 VFS 层负责处理。
+ *
+ *                      不应在 VFS 层之上直接调用 VOP_EACHOPEN，
+ *                      而应使用 vfs_open() 来打开 inode。
+ *                      这样可以维护打开计数，从而在合适的时机
+ *                      调用 VOP_LASTCLOSE。
+ *
+ *    vop_close       - 在文件被“最后一次” close() 时调用。
+ *
+ *                      不应在 VFS 层之上直接调用 VOP_LASTCLOSE，
+ *                      应使用 vfs_close() 来关闭通过 vfs_open()
+ *                      打开的 inode。
+ *
+ *    vop_reclaim     - 当 inode 不再被使用时调用。需要注意的是，
+ *                      该调用可能会在 vop_lastclose 被调用很久之后
+ *                      才发生。
+ *
+ *****************************************
+ *
+ *    vop_read        - 从文件中读取数据到 uio，读取位置由 uio 中
+ *                      的偏移量指定；同时更新 uio_resid 以反映
+ *                      实际读取的字节数，并更新 uio_offset。
+ *                      不允许用于目录或符号链接。
+ *
+ *    vop_getdirentry - 从目录中读取一个文件名到 uio 中，具体读取
+ *                      哪个名字由 uio 中的 offset 字段决定，并在
+ *                      读取后更新该字段。与普通文件 I/O 不同，
+ *                      offset 字段的值不会在文件系统之外被解释，
+ *                      因此不必是字节计数。不过，uio_resid 字段
+ *                      仍应按常规方式处理。
+ *                      如果对象不是目录，应返回 ENOTDIR。
+ *
+ *    vop_write       - 将数据从 uio 写入文件，写入位置由 uio 中
+ *                      的偏移量指定；同时更新 uio_resid 以反映
+ *                      实际写入的字节数，并更新 uio_offset。
+ *                      不允许用于目录或符号链接。
+ *
+ *    vop_ioctl       - 使用数据 DATA 在文件上执行 ioctl 操作 OP。
+ *                      DATA 的具体含义由各个 ioctl 自行定义。
+ *
+ *    vop_fstat       - 返回文件的信息。传入的指针是指向 struct stat
+ *                      的指针，参见 stat.h。
+ *
+ *    vop_gettype     - 返回文件的类型。文件类型的取值定义在 sfs.h 中。
+ *
+ *    vop_tryseek     - 检查在文件中 seek 到指定位置是否合法。
+ *                      （例如，串口设备不允许任何形式的 seek；
+ *                      对于大小固定的文件，seek 到 EOF 之后
+ *                      也可能是不允许的。）
+ *
+ *    vop_fsync       - 强制将与该文件关联的所有脏缓冲区写回到
+ *                      稳定存储介质。
+ *
+ *    vop_truncate    - 强制将文件大小设置为指定长度，并丢弃
+ *                      超出该长度的所有数据块。
+ *
+ *    vop_namefile    - 计算该文件相对于文件系统根目录的路径名，
+ *                      并将其拷贝到指定的 I/O 缓冲区中。
+ *                      对于非目录对象，不要求必须实现该操作。
+ *
+ *****************************************
+ *
+ *    vop_creat       - 在给定目录 DIR 中创建一个名为 NAME 的普通文件。
+ *                      如果布尔值 EXCL 为真，则当文件已存在时失败；
+ *                      否则如果文件已存在，则使用已有文件。
+ *                      返回的 inode 与 vop_lookup 的行为一致。
+ *
+ *****************************************
+ *
+ *    vop_lookup      - 相对于给定目录 DIR 解析 PATHNAME，
+ *                      并返回其所指向文件的 inode。
+ *                      该操作可能会销毁 PATHNAME。
+ *                      应当增加返回 inode 的引用计数。
+ */
+
 struct inode_ops {
     unsigned long vop_magic;
     int (*vop_open)(struct inode *node, uint32_t open_flags);

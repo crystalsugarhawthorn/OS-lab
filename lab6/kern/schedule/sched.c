@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <assert.h>
 #include <default_sched.h>
+#include <fifo_sched.h>
+#include <sjf_sched.h>
+#include <hrrn_sched.h>
 
 // the list of timer
 static list_entry_t timer_list;
@@ -52,7 +55,18 @@ void sched_init(void)
 {
     list_init(&timer_list);
 
+    // 选择调度算法：
+    // 1. default_sched_class - RR (Round Robin) 时间片轮转
+    // 2. stride_sched_class  - Stride 调度算法（比例分配）
+    // 3. fifo_sched_class    - FIFO 先进先出
+    // 4. sjf_sched_class     - SJF 短作业优先
+    // 5. hrrn_sched_class    - HRRN 最高响应比优先
+    
     sched_class = &default_sched_class;
+    // sched_class = &stride_sched_class;
+    // sched_class = &fifo_sched_class;
+    // sched_class = &sjf_sched_class;
+    // sched_class = &hrrn_sched_class;
 
     rq = &__rq;
     rq->max_time_slice = MAX_TIME_SLICE;
