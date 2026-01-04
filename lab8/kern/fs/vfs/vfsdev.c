@@ -36,10 +36,14 @@ unlock_vdev_list(void) {
     up(&vdev_list_sem);
 }
 
-void
-vfs_devlist_init(void) {
-    list_init(&vdev_list);
-    sem_init(&vdev_list_sem, 1);
+/*
+ * 初始化虚拟文件系统设备列表
+ * 该函数用于初始化设备链表和相关信号量
+ */
+void    // 函数返回类型，无返回值
+vfs_devlist_init(void) {  // 函数名，无参数
+    list_init(&vdev_list);    // 初始化设备链表
+    sem_init(&vdev_list_sem, 1);  // 初始化设备链表信号量，初始值为1
 }
 
 // vfs_cleanup - finally clean (or sync) fs

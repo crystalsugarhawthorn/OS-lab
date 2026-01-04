@@ -8,11 +8,15 @@
 #include <inode.h>
 #include <assert.h>
 //called when init_main proc start
+/**
+ * 文件系统初始化函数
+ * 该函数负责初始化整个文件系统相关的模块
+ */
 void
 fs_init(void) {
-    vfs_init();
-    dev_init();
-    sfs_init();
+    vfs_init();    // 初始化虚拟文件系统(VFS)
+    dev_init();    // 初始化设备管理模块
+    sfs_init();    // 初始化简单文件系统(SFS)
 }
 
 void

@@ -102,12 +102,25 @@ sys_close(uint64_t arg[])
     return sysfile_close(fd);
 }
 
+/*
+ * sys_read - 系统调用：从文件描述符读取数据
+ * @arg[0]: 文件描述符
+ * @arg[1]: 存储读取数据的缓冲区指针
+ * @arg[2]: 要读取的字节数
+ * 
+ * 返回值：成功返回实际读取的字节数，失败返回负的错误码
+ * 
+ * 该函数是read系统调用的内核实现，它从指定的文件描述符读取数据，
+ * 并将数据存储到用户提供的缓冲区中。
+ */
 static int
 sys_read(uint64_t arg[])
 {
-    int fd = (int)arg[0];
-    void *base = (void *)arg[1];
-    size_t len = (size_t)arg[2];
+    int fd = (int)arg[0];           /* 文件描述符 */
+    void *base = (void *)arg[1];    /* 数据缓冲区指针 */
+    size_t len = (size_t)arg[2];    /* 要读取的字节数 */
+    
+    /* 调用文件系统读取函数执行实际读取操作 */
     return sysfile_read(fd, base, len);
 }
 

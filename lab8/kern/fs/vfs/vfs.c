@@ -23,9 +23,15 @@ __alloc_fs(int type) {
 }
 
 // vfs_init -  vfs initialize
+/*
+ * 初始化虚拟文件系统(VFS)
+ * 该函数用于设置VFS运行所需的基本环境和数据结构
+ */
 void
 vfs_init(void) {
+    // 初始化引导文件系统(bootfs)的信号量，初始值为1，表示可用
     sem_init(&bootfs_sem, 1);
+    // 初始化设备文件列表，用于管理系统中的所有设备文件
     vfs_devlist_init();
 }
 
@@ -76,11 +82,17 @@ vfs_set_bootfs(char *fsname) {
 }
 
 // vfs_get_bootfs - get the inode of bootfs
+/**
+ * 获取引导文件系统的inode节点
+ * @param node_store 用于存储获取到的inode节点的指针
+ * @return 成功返回0，失败返回-E_NOENT
+ */
 int
 vfs_get_bootfs(struct inode **node_store) {
-    struct inode *node = NULL;
+    struct inode *node = NULL;  // 定义inode指针并初始化为NULL
+    // 如果引导文件系统节点不为空
     if (bootfs_node != NULL) {
-        lock_bootfs();
+        lock_bootfs();  // 锁定引导文件系统
         {
             if ((node = bootfs_node) != NULL) {
                 vop_ref_inc(bootfs_node);

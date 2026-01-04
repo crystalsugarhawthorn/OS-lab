@@ -38,14 +38,27 @@ failed_cleanup:
 }
 
 /* sysfile_open - open file */
+/*
+ * sysfile_open - 系统调用，打开一个文件
+ * @__path: 要打开的文件路径（用户空间指针）
+ * @open_flags: 文件打开标志（如只读、只写、读写等）
+ * 
+ * 返回值：成功返回文件描述符，失败返回错误码
+ * 
+ * 该函数首先从用户空间复制文件路径到内核空间，然后调用file_open打开文件，
+ * 最后释放复制的路径字符串并返回结果。
+ */
 int
 sysfile_open(const char *__path, uint32_t open_flags) {
     int ret;
     char *path;
+    /* 从用户空间复制路径到内核空间 */
     if ((ret = copy_path(&path, __path)) != 0) {
         return ret;
     }
+    /* 打开文件 */
     ret = file_open(path, open_flags);
+    /* 释放临时复制的路径字符串 */
     kfree(path);
     return ret;
 }
@@ -57,50 +70,84 @@ sysfile_close(int fd) {
 }
 
 /* sysfile_read - read file */
+/*
+ * sysfile_read - 从文件描述符读取数据到用户空间缓冲区
+ * @fd: 文件描述符
+ * @base: 用户空间缓冲区指针
+ * @len: 要读取的字节数
+ * 
+ * 返回值：成功返回实际读取的字节数，失败返回负的错误码
+ * 
+ * 该函数使用内核缓冲区进行分块读取，然后将数据复制到用户空间。
+ * 这种设计可以避免直接访问用户空间内存，提高系统稳定性和安全性。
+ */
 int
 sysfile_read(int fd, void *base, size_t len) {
-    struct mm_struct *mm = current->mm;
+    struct mm_struct *mm = current->mm;  /* 获取当前进程的内存管理结构 */
+    
+    /* 处理读取长度为0的特殊情况 */
     if (len == 0) {
         return 0;
     }
+    
+    /* 检查文件描述符是否有效且可读 */
     if (!file_testfd(fd, 1, 0)) {
         return -E_INVAL;
     }
+    
+    /* 分配内核缓冲区用于中转数据 */
     void *buffer;
     if ((buffer = kmalloc(IOBUF_SIZE)) == NULL) {
         return -E_NO_MEM;
     }
 
-    int ret = 0;
-    size_t copied = 0, alen;
+    int ret = 0;          /* 存储错误码 */
+    size_t copied = 0;    /* 已复制的字节数 */
+    size_t alen;          /* 本次读取的长度 */
+    
+    /* 循环读取，直到满足用户请求的长度或遇到错误 */
     while (len != 0) {
+        /* 计算本次读取的长度，不超过IOBUF_SIZE */
         if ((alen = IOBUF_SIZE) > len) {
             alen = len;
         }
+        
+        /* 从文件读取数据到内核缓冲区 */
         ret = file_read(fd, buffer, alen, &alen);
+        
+        /* 如果读取到了数据，则复制到用户空间 */
         if (alen != 0) {
-            lock_mm(mm);
+            lock_mm(mm);  /* 锁定内存管理结构，防止在复制过程中内存布局改变 */
             {
+                /* 将数据从内核缓冲区复制到用户空间 */
                 if (copy_to_user(mm, base, buffer, alen)) {
                     assert(len >= alen);
+                    /* 更新指针和计数器 */
                     base += alen, len -= alen, copied += alen;
                 }
+                /* 如果复制失败但读取操作本身没有错误，则设置错误码 */
                 else if (ret == 0) {
                     ret = -E_INVAL;
                 }
             }
-            unlock_mm(mm);
+            unlock_mm(mm);  /* 解锁内存管理结构 */
         }
+        
+        /* 如果发生错误或没有更多数据可读，则退出循环 */
         if (ret != 0 || alen == 0) {
             goto out;
         }
     }
 
 out:
-    kfree(buffer);
+    kfree(buffer);  /* 释放内核缓冲区 */
+    
+    /* 如果已经复制了部分数据，返回已复制的字节数 */
     if (copied != 0) {
         return copied;
     }
+    
+    /* 没有复制任何数据，返回错误码 */
     return ret;
 }
 

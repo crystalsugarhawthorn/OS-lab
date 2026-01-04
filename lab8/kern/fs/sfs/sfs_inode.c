@@ -350,23 +350,46 @@ sfs_bmap_free_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, uint32_t index) 
  * @index:    the logical index of disk block in inode
  * @ino_store:the NO. of disk block
  */
+/*
+ * sfs_bmap_load_nolock - 加载指定逻辑块号对应的物理块号（不加锁版本）
+ * @sfs: SFS文件系统指针
+ * @sin: SFS inode指针
+ * @index: 逻辑块号
+ * @ino_store: 用于返回物理块号的指针
+ * 
+ * 返回值：成功返回0，失败返回负的错误码
+ * 
+ * 注意：此函数不加锁，调用者必须确保sin已经被锁定
+ * 
+ * 该函数用于将文件的逻辑块号映射到物理块号，如果请求的块号等于
+ * 文件当前块数，则会分配一个新的物理块（用于文件扩展）。
+ */
 static int
 sfs_bmap_load_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, uint32_t index, uint32_t *ino_store) {
-    struct sfs_disk_inode *din = sin->din;
-    assert(index <= din->blocks);
+    struct sfs_disk_inode *din = sin->din;  /* 获取磁盘inode */
+    assert(index <= din->blocks);            /* 确保索引合法 */
+    
     int ret;
     uint32_t ino;
-    bool create = (index == din->blocks);
+    bool create = (index == din->blocks);   /* 判断是否需要创建新块 */
+    
+    /* 获取逻辑块号对应的物理块号，如果需要则创建新块 */
     if ((ret = sfs_bmap_get_nolock(sfs, sin, index, create, &ino)) != 0) {
-        return ret;
+        return ret;  /* 获取失败，返回错误码 */
     }
-    assert(sfs_block_inuse(sfs, ino));
+    
+    assert(sfs_block_inuse(sfs, ino));  /* 确保物理块在使用中 */
+    
+    /* 如果创建了新块，更新文件块计数 */
     if (create) {
         din->blocks ++;
     }
+    
+    /* 设置返回值 */
     if (ino_store != NULL) {
         *ino_store = ino;
     }
+    
     return 0;
 }
 
@@ -437,35 +460,60 @@ sfs_dirent_read_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, int slot, stru
  * @slot:       logical index of file entry (NOTICE: each file entry ocupied one  disk block)
  * @empty_slot: the empty logical index of file entry.
  */
+/*
+ * sfs_dirent_search_nolock - 在目录中搜索指定的目录项（不加锁版本）
+ * @sfs: SFS文件系统指针
+ * @sin: 目录的SFS inode指针
+ * @name: 要搜索的文件名
+ * @ino_store: 用于返回找到的inode编号（可选）
+ * @slot: 用于返回目录项在目录中的位置（可选）
+ * @empty_slot: 用于返回一个空的目录项位置（可选）
+ * 
+ * 返回值：成功找到返回0，未找到返回-E_NOENT，其他错误返回相应错误码
+ * 
+ * 注意：此函数不加锁，调用者必须确保sin已经被锁定
+ */
 static int
 sfs_dirent_search_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, const char *name, uint32_t *ino_store, int *slot, int *empty_slot) {
-    assert(strlen(name) <= SFS_MAX_FNAME_LEN);
+    assert(strlen(name) <= SFS_MAX_FNAME_LEN);  /* 确保文件名长度合法 */
+    
     struct sfs_disk_entry *entry;
+    /* 分配内存用于存储目录项 */
     if ((entry = kmalloc(sizeof(struct sfs_disk_entry))) == NULL) {
-        return -E_NO_MEM;
+        return -E_NO_MEM;  /* 内存分配失败 */
     }
 
+    /* 定义一个宏，用于安全地设置可选参数的值 */
 #define set_pvalue(x, v)            do { if ((x) != NULL) { *(x) = (v); } } while (0)
-    int ret, i, nslots = sin->din->blocks;
-    set_pvalue(empty_slot, nslots);
+    int ret, i, nslots = sin->din->blocks;  /* 获取目录项数量 */
+    set_pvalue(empty_slot, nslots);  /* 初始化empty_slot为无效值 */
+    
+    /* 遍历所有目录项 */
     for (i = 0; i < nslots; i ++) {
+        /* 读取第i个目录项 */
         if ((ret = sfs_dirent_read_nolock(sfs, sin, i, entry)) != 0) {
-            goto out;
+            goto out;  /* 读取失败，跳转到清理代码 */
         }
+        
+        /* 如果目录项为空（inode编号为0），记录空槽位 */
         if (entry->ino == 0) {
-            set_pvalue(empty_slot, i);
+            set_pvalue(empty_slot, i);  /* 记录第一个空槽位 */
             continue ;
         }
+        
+        /* 比较文件名，如果匹配则记录结果并返回 */
         if (strcmp(name, entry->name) == 0) {
-            set_pvalue(slot, i);
-            set_pvalue(ino_store, entry->ino);
-            goto out;
+            set_pvalue(slot, i);          /* 记录目录项位置 */
+            set_pvalue(ino_store, entry->ino);  /* 记录inode编号 */
+            goto out;  /* 找到目标，跳转到清理代码 */
         }
     }
-#undef set_pvalue
-    ret = -E_NOENT;
+    
+#undef set_pvalue  /* 取消宏定义 */
+    ret = -E_NOENT;  /* 未找到目标文件 */
+    
 out:
-    kfree(entry);
+    kfree(entry);  /* 释放临时内存 */
     return ret;
 }
 
@@ -495,17 +543,33 @@ sfs_dirent_findino_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, uint32_t in
  * @node_store: the inode corresponding the file name in DIR
  * @slot:       the logical index of file entry
  */
+/*
+ * sfs_lookup_once - 在SFS文件系统中执行一次文件/目录查找
+ * @sfs: SFS文件系统指针
+ * @sin: 父目录的SFS inode指针
+ * @name: 要查找的文件/目录名
+ * @node_store: 用于返回找到的inode指针
+ * @slot: 用于返回目录项在目录中的位置（可选）
+ * 
+ * 返回值：成功返回0，失败返回错误码
+ * 
+ * 该函数在指定的目录中查找给定的文件名，如果找到则加载对应的inode。
+ * 查找过程需要锁定父目录inode以保证线程安全。
+ */
 static int
 sfs_lookup_once(struct sfs_fs *sfs, struct sfs_inode *sin, const char *name, struct inode **node_store, int *slot) {
     int ret;
-    uint32_t ino;
-    lock_sin(sin);
-    {   // find the NO. of disk block and logical index of file entry
+    uint32_t ino;  /* 用于存储找到的inode编号 */
+    
+    lock_sin(sin);  /* 锁定父目录inode，保证线程安全 */
+    {   /* 在目录中搜索文件项，获取磁盘块号和逻辑索引 */
         ret = sfs_dirent_search_nolock(sfs, sin, name, &ino, slot, NULL);
     }
-    unlock_sin(sin);
+    unlock_sin(sin);  /* 解锁父目录inode */
+    
+    /* 如果找到了文件项，加载对应的inode */
     if (ret == 0) {
-		// load the content of inode with the the NO. of disk block
+        /* 根据磁盘块号加载inode内容 */
         ret = sfs_load_inode(sfs, node_store, ino);
     }
     return ret;
@@ -549,45 +613,73 @@ sfs_close(struct inode *node) {
  * @alenp:    the length need to read (is a pointer). and will RETURN the really Rd/Wr lenght
  * @write:    BOOL, 0 read, 1 write
  */
+/*
+ * sfs_io_nolock - 在SFS文件系统中执行无锁的I/O操作
+ * @sfs: SFS文件系统指针
+ * @sin: SFS inode指针
+ * @buf: 数据缓冲区指针
+ * @offset: 文件内的偏移量
+ * @alenp: 输入时为要读/写的字节数，输出时为实际读/写的字节数
+ * @write: true表示写操作，false表示读操作
+ * 
+ * 返回值：成功返回0，失败返回负的错误码
+ * 
+ * 该函数是SFS文件系统的核心I/O函数，负责处理文件数据的读写。
+ * 它将I/O操作分为三个部分：前导非对齐部分、中间对齐块和尾部非对齐部分。
+ * 注意：此函数不加锁，调用者必须确保sin已经被锁定。
+ * 
+ * 先计算一些辅助变量，并处理一些特殊情况（比如越界），然后有sfs_buf_op = sfs_rbuf,sfs_block_op = sfs_rblock，设置读取的函数操作。
+ * 接着进行实际操作，先处理起始的没有对齐到块的部分，再以块为单位循环处理中间的部分，最后处理末尾剩余的部分。
+ * 每部分中都调用sfs_bmap_load_nolock函数得到blkno对应的inode编号，并调用sfs_rbuf或sfs_rblock函数读取数据（中间部分调用sfs_rblock，起始和末尾部分调用sfs_rbuf），调整相关变量。
+ * 完成后如果offset + alen > din->fileinfo.size（写文件时会出现这种情况，读文件时不会出现这种情况，alen为实际读写的长度），则调整文件大小为offset + alen并设置dirty变量。
+ */
 static int
 sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset, size_t *alenp, bool write) {
-    struct sfs_disk_inode *din = sin->din;
-    assert(din->type != SFS_TYPE_DIR);
-    off_t endpos = offset + *alenp, blkoff;
-    *alenp = 0;
-	// calculate the Rd/Wr end position
+    struct sfs_disk_inode *din = sin->din;  /* 获取磁盘inode */
+    assert(din->type != SFS_TYPE_DIR);      /* 确保不是目录 */
+    
+    off_t endpos = offset + *alenp, blkoff;  /* 计算结束位置和块内偏移 */
+    *alenp = 0;  /* 初始化实际读/写字节数 */
+    
+    /* 计算读/写的结束位置 */
     if (offset < 0 || offset >= SFS_MAX_FILE_SIZE || offset > endpos) {
-        return -E_INVAL;
+        return -E_INVAL;  /* 无效的偏移量或长度 */
     }
+    
     if (offset == endpos) {
-        return 0;
+        return 0;  /* 没有数据需要读/写 */
     }
+    
+    /* 限制结束位置不超过文件最大大小 */
     if (endpos > SFS_MAX_FILE_SIZE) {
         endpos = SFS_MAX_FILE_SIZE;
     }
+    
+    /* 对于读操作，限制不超过文件当前大小 */
     if (!write) {
         if (offset >= din->size) {
-            return 0;
+            return 0;  /* 偏移量已超出文件末尾 */
         }
         if (endpos > din->size) {
-            endpos = din->size;
+            endpos = din->size;  /* 调整结束位置到文件末尾 */
         }
     }
 
+    /* 根据操作类型选择相应的缓冲区和块操作函数 */
     int (*sfs_buf_op)(struct sfs_fs *sfs, void *buf, size_t len, uint32_t blkno, off_t offset);
     int (*sfs_block_op)(struct sfs_fs *sfs, void *buf, uint32_t blkno, uint32_t nblks);
     if (write) {
-        sfs_buf_op = sfs_wbuf, sfs_block_op = sfs_wblock;
+        sfs_buf_op = sfs_wbuf, sfs_block_op = sfs_wblock;  /* 写操作函数 */
     }
     else {
-        sfs_buf_op = sfs_rbuf, sfs_block_op = sfs_rblock;
+        sfs_buf_op = sfs_rbuf, sfs_block_op = sfs_rblock;  /* 读操作函数 */
     }
 
-    int ret = 0;
-    size_t size, alen = 0;
-    uint32_t ino;
-    uint32_t blkno = offset / SFS_BLKSIZE;          // The NO. of Rd/Wr begin block
-    uint32_t nblks = endpos / SFS_BLKSIZE - blkno;  // The size of Rd/Wr blocks
+    int ret = 0;       /* 错误码 */
+    size_t size, alen = 0;  /* 当前操作大小和累计操作大小 */
+    uint32_t ino;      /* 磁盘块号 */
+    uint32_t blkno = offset / SFS_BLKSIZE;          /* 起始块号 */
+    uint32_t nblks = endpos / SFS_BLKSIZE - blkno;  /* 需要操作的完整块数 */
 
   //LAB8:EXERCISE1 YOUR CODE HINT: call sfs_bmap_load_nolock, sfs_rbuf, sfs_rblock,etc. read different kind of blocks in file
 	/*
@@ -599,64 +691,81 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
      * (3) If end position isn't aligned with the last block, Rd/Wr some content from begin to the (endpos % SFS_BLKSIZE) of the last block
 	 *       NOTICE: useful function: sfs_bmap_load_nolock, sfs_buf_op	
 	*/
-    // 分三段处理：前导非对齐（块内偏移）、中间整块、结尾非对齐（尾块部分）
-    blkoff = offset % SFS_BLKSIZE;
-    char *ptr = (char *)buf;
+    /* 分三段处理：前导非对齐（块内偏移）、中间整块、结尾非对齐（尾块部分） */
+    blkoff = offset % SFS_BLKSIZE;  /* 计算块内偏移 */
+    char *ptr = (char *)buf;        /* 缓冲区指针，用于移动 */
 
-    // (1) 处理前导非对齐部分：从 offset 读/写到该块末尾或直接到 endpos（若只涉及一个块）
+    /* (1) 处理前导非对齐部分：从 offset 读/写到该块末尾或直接到 endpos（若只涉及一个块） */
     if (blkoff != 0) {
-        // 映射逻辑块号到物理块号，写入时可能需要在文件末尾分配新块
+        /* 映射逻辑块号到物理块号，写入时可能需要在文件末尾分配新块 */
         if ((ret = sfs_bmap_load_nolock(sfs, sin, blkno, &ino)) != 0) {
-            goto out;
+            goto out;  /* 映射失败，跳转到清理代码 */
         }
-        // 若有后续整块则读满本块剩余字节，否则只读到 endpos
+        
+        /* 若有后续整块则读满本块剩余字节，否则只读到 endpos */
         size = (nblks != 0) ? (SFS_BLKSIZE - blkoff) : (endpos - offset);
+        
+        /* 执行缓冲区级读/写操作 */
         if ((ret = sfs_buf_op(sfs, ptr, size, ino, blkoff)) != 0) {
-            goto out;
+            goto out;  /* 操作失败，跳转到清理代码 */
         }
+        
+        /* 更新指针和计数器 */
         ptr += size;
         alen += size;
         blkno += 1;
-        // 消耗了一个块的尾部，若原本存在整块区段则减少一个块计数
+        
+        /* 消耗了一个块的尾部，若原本存在整块区段则减少一个块计数 */
         if (nblks != 0) {
             nblks -= 1;
         }
     }
 
-    // (2) 处理中间对齐的整块：一次一个块进行块级读/写
+    /* (2) 处理中间对齐的整块：一次一个块进行块级读/写 */
     while (nblks != 0) {
+        /* 映射逻辑块号到物理块号 */
         if ((ret = sfs_bmap_load_nolock(sfs, sin, blkno, &ino)) != 0) {
-            goto out;
+            goto out;  /* 映射失败，跳转到清理代码 */
         }
+        
+        /* 执行块级读/写操作 */
         if ((ret = sfs_block_op(sfs, ptr, ino, 1)) != 0) {
-            goto out;
+            goto out;  /* 操作失败，跳转到清理代码 */
         }
+        
+        /* 更新指针和计数器 */
         ptr += SFS_BLKSIZE;
         alen += SFS_BLKSIZE;
         blkno += 1;
         nblks -= 1;
     }
 
-    // (3) 处理尾部非对齐部分：仅在仍有剩余字节时执行，避免与前导同块重复
-    size_t remain = (size_t)(endpos - offset - alen);
+    /* (3) 处理尾部非对齐部分：仅在仍有剩余字节时执行，避免与前导同块重复 */
+    size_t remain = (size_t)(endpos - offset - alen);  /* 计算剩余字节数 */
     if (remain != 0) {
-        // 此时应当处于块边界（或初始即对齐且未进入中间循环），尾部偏移为 0
+        /* 此时应当处于块边界（或初始即对齐且未进入中间循环），尾部偏移为 0 */
         if ((ret = sfs_bmap_load_nolock(sfs, sin, blkno, &ino)) != 0) {
-            goto out;
+            goto out;  /* 映射失败，跳转到清理代码 */
         }
+        
+        /* 执行缓冲区级读/写操作 */
         if ((ret = sfs_buf_op(sfs, ptr, remain, ino, 0)) != 0) {
-            goto out;
+            goto out;  /* 操作失败，跳转到清理代码 */
         }
-        alen += remain;
+        
+        alen += remain;  /* 更新累计操作大小 */
     }
     
 
 out:
-    *alenp = alen;
+    *alenp = alen;  /* 设置实际读/写的字节数 */
+    
+    /* 如果是写操作且写操作扩展了文件大小，更新文件大小 */
     if (offset + alen > sin->din->size) {
         sin->din->size = offset + alen;
-        sin->dirty = 1;
+        sin->dirty = 1;  /* 标记inode为脏，需要写回磁盘 */
     }
+    
     return ret;
 }
 
@@ -682,6 +791,9 @@ sfs_io(struct inode *node, struct iobuf *iob, bool write) {
 }
 
 // sfs_read - read file
+// sfs_read函数调用sfs_io函数。
+// 它有三个参数，node是对应文件的inode，iob是缓存，write表示是读还是写的布尔值（0表示读，1表示写），这里是0。
+// 函数先找到inode对应sfs和sin，然后调用sfs_io_nolock函数进行读取文件操作，最后调用iobuf_skip函数调整iobuf的指针。
 static int
 sfs_read(struct inode *node, struct iobuf *iob) {
     return sfs_io(node, iob, 0);
@@ -988,24 +1100,40 @@ out_unlock:
  *              DIR, and hand back the inode for the file it
  *              refers to.
  */
+/*
+ * sfs_lookup - 在SFS文件系统中查找路径对应的inode
+ * @node: 起始目录的inode
+ * @path: 要查找的相对路径（不能以'/'开头）
+ * @node_store: 用于返回找到的inode指针
+ * 
+ * 返回值：成功返回0，失败返回错误码
+ * 
+ * 该函数在给定的目录inode中查找指定的路径，并返回对应的inode。
+ * 查找过程中会增加和减少inode的引用计数。
+ */
 static int
 sfs_lookup(struct inode *node, char *path, struct inode **node_store) {
-    struct sfs_fs *sfs = fsop_info(vop_fs(node), sfs);
-    assert(*path != '\0' && *path != '/');
-    vop_ref_inc(node);
-    struct sfs_inode *sin = vop_info(node, sfs_inode);
+    struct sfs_fs *sfs = fsop_info(vop_fs(node), sfs);  /* 获取SFS文件系统信息 */
+    assert(*path != '\0' && *path != '/');           /* 确保路径有效且不是绝对路径 */
+    
+    vop_ref_inc(node);                                 /* 增加父目录inode的引用计数 */
+    struct sfs_inode *sin = vop_info(node, sfs_inode); /* 获取SFS inode信息 */
+    
+    /* 检查父目录是否真的是目录 */
     if (sin->din->type != SFS_TYPE_DIR) {
-        vop_ref_dec(node);
-        return -E_NOTDIR;
+        vop_ref_dec(node);                             /* 减少引用计数 */
+        return -E_NOTDIR;                             /* 返回不是目录的错误 */
     }
+    
     struct inode *subnode;
+    /* 在目录中执行一次查找 */
     int ret = sfs_lookup_once(sfs, sin, path, &subnode, NULL);
 
-    vop_ref_dec(node);
+    vop_ref_dec(node);                                 /* 减少父目录inode的引用计数 */
     if (ret != 0) {
-        return ret;
+        return ret;                                    /* 查找失败，返回错误码 */
     }
-    *node_store = subnode;
+    *node_store = subnode;                             /* 返回找到的inode */
     return 0;
 }
 

@@ -670,6 +670,9 @@ int do_exit(int error_code)
 }
 
 // load_icode_read is used by load_icode in LAB8
+// 实验8和实验5中load_icode（）函数代码最大不同的地方在于读取EFL文件的方式
+// 实验5中是通过获取ELF在内存中的位置，根据ELF的格式进行解析
+// 实验8中则是通过ELF文件的文件描述符调用load_icode_read（）函数来进行解析程序。
 static int
 load_icode_read(int fd, void *buf, size_t len, off_t offset)
 {
@@ -922,76 +925,110 @@ failed_cleanup:
 
 // do_execve - call exit_mmap(mm)&put_pgdir(mm) to reclaim memory space of current process
 //           - call load_icode to setup new memory space accroding binary prog.
+/*
+ * do_execve - 执行一个新程序
+ * @name: 程序名称（可为NULL）
+ * @argc: 参数个数
+ * @argv: 参数数组
+ * 
+ * 返回值：成功不会返回（因为进程被替换），失败返回负的错误码
+ * 
+ * 该函数是execve系统调用的核心实现，它会加载并执行一个新程序，
+ * 替换当前进程的内存映像。执行成功后，进程将从新程序的入口点开始执行。
+ */
 int do_execve(const char *name, int argc, const char **argv)
 {
-    static_assert(EXEC_MAX_ARG_LEN >= FS_MAX_FPATH_LEN);
-    struct mm_struct *mm = current->mm;
+    static_assert(EXEC_MAX_ARG_LEN >= FS_MAX_FPATH_LEN);  /* 确保参数长度足够 */
+    struct mm_struct *mm = current->mm;  /* 获取当前进程的内存管理结构 */
+    
+    /* 验证参数个数合法性 */
     if (!(argc >= 1 && argc <= EXEC_MAX_ARG_NUM))
     {
-        return -E_INVAL;
+        return -E_INVAL;  /* 参数个数不合法 */
     }
 
-    char local_name[PROC_NAME_LEN + 1];
-    memset(local_name, 0, sizeof(local_name));
+    char local_name[PROC_NAME_LEN + 1];  /* 本地进程名缓冲区 */
+    memset(local_name, 0, sizeof(local_name));  /* 初始化缓冲区 */
 
-    char *kargv[EXEC_MAX_ARG_NUM];
-    const char *path;
+    char *kargv[EXEC_MAX_ARG_NUM];  /* 内核空间参数数组 */
+    const char *path;  /* 程序路径 */
 
-    int ret = -E_INVAL;
+    int ret = -E_INVAL;  /* 默认错误码 */
 
+    /* 锁定内存管理结构，防止在复制过程中内存布局改变 */
     lock_mm(mm);
+    
+    /* 处理进程名 */
     if (name == NULL)
     {
+        /* 如果没有提供名称，使用默认格式 */
         snprintf(local_name, sizeof(local_name), "<null> %d", current->pid);
     }
     else
     {
+        /* 从用户空间复制进程名到内核空间 */
         if (!copy_string(mm, local_name, name, sizeof(local_name)))
         {
-            unlock_mm(mm);
+            unlock_mm(mm);  /* 复制失败，解锁并返回 */
             return ret;
         }
     }
+    
+    /* 从用户空间复制参数到内核空间 */
     if ((ret = copy_kargv(mm, argc, kargv, argv)) != 0)
     {
-        unlock_mm(mm);
+        unlock_mm(mm);  /* 复制失败，解锁并返回 */
         return ret;
     }
-    path = argv[0];
-    unlock_mm(mm);
+    
+    path = argv[0];  /* 获取程序路径 */
+    unlock_mm(mm);  /* 解锁内存管理结构 */
+    
+    /* 关闭当前进程打开的所有文件 */
     files_closeall(current->filesp);
 
     /* sysfile_open will check the first argument path, thus we have to use a user-space pointer, and argv[0] may be incorrect */
     int fd;
+    /* 打开可执行文件 */
     if ((ret = fd = sysfile_open(path, O_RDONLY)) < 0)
     {
-        goto execve_exit;
+        goto execve_exit;  /* 打开失败，跳转到退出处理 */
     }
+    
+    /* 如果当前进程已有内存空间，则释放它 */
     if (mm != NULL)
     {
-        lsatp(boot_pgdir_pa);
+        lsatp(boot_pgdir_pa);  /* 切换到内核页表 */
+        
+        /* 减少内存管理结构的引用计数，如果为0则彻底释放 */
         if (mm_count_dec(mm) == 0)
         {
-            exit_mmap(mm);
-            put_pgdir(mm);
-            mm_destroy(mm);
+            exit_mmap(mm);  /* 释放内存映射 */
+            put_pgdir(mm);  /* 释放页目录 */
+            mm_destroy(mm);  /* 销毁内存管理结构 */
         }
-        current->mm = NULL;
+        
+        current->mm = NULL;  /* 清除当前进程的内存管理结构指针 */
     }
-    ret = -E_NO_MEM;
-    ;
+    
+    ret = -E_NO_MEM;  /* 设置默认错误码为内存不足 */
+    
+    /* 加载可执行文件到内存 */
     if ((ret = load_icode(fd, argc, kargv)) != 0)
     {
-        goto execve_exit;
+        goto execve_exit;  /* 加载失败，跳转到退出处理 */
     }
-    put_kargv(argc, kargv);
-    set_proc_name(current, local_name);
-    return 0;
+    
+    put_kargv(argc, kargv);  /* 释放内核参数数组 */
+    set_proc_name(current, local_name);  /* 设置进程名 */
+    
+    return 0;  /* 执行成功 */
 
 execve_exit:
-    put_kargv(argc, kargv);
-    do_exit(ret);
-    panic("already exit: %e.\n", ret);
+    /* 错误处理路径 */
+    put_kargv(argc, kargv);  /* 释放内核参数数组 */
+    do_exit(ret);  /* 退出进程 */
+    panic("already exit: %e.\n", ret);  /* 不应该执行到这里 */
 }
 
 // do_yield - ask the scheduler to reschedule

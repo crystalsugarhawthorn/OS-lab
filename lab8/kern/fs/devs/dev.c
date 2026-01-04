@@ -141,6 +141,14 @@ static const struct inode_ops dev_node_ops = {
     .vop_lookup                     = dev_lookup,
 };
 
+/*
+ * init_device - 初始化指定类型的设备
+ * @x: 设备类型名称
+ *
+ * 该宏用于初始化特定类型的设备，它通过拼接符号##来构造设备初始化函数名，
+ * 然后调用该函数来初始化对应的设备。
+ * 使用do-while(0)结构确保宏在所有上下文中都能正确工作。
+ */
 #define init_device(x)                                  \
     do {                                                \
         extern void dev_init_##x(void);                 \
@@ -148,12 +156,16 @@ static const struct inode_ops dev_node_ops = {
     } while (0)
 
 /* dev_init - Initialization functions for builtin vfs-level devices. */
+/**
+ * 设备初始化函数
+ * 该函数用于初始化系统中的标准设备
+ */
 void
 dev_init(void) {
-   // init_device(null);
-    init_device(stdin);
-    init_device(stdout);
-    init_device(disk0);
+   // init_device(null);  // 这行被注释掉，可能是因为不需要初始化空设备
+    init_device(stdin);  // 初始化标准输入设备
+    init_device(stdout); // 初始化标准输出设备
+    init_device(disk0);  // 初始化磁盘设备0
 }
 /* dev_create_inode - Create inode for a vfs-level device. */
 struct inode *

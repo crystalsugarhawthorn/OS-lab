@@ -7,10 +7,15 @@
 #include <sync.h>
 #include <assert.h>
 
+/**
+ * 初始化信号量
+ * @param sem 指向信号量结构的指针
+ * @param value 信号量的初始值
+ */
 void
 sem_init(semaphore_t *sem, int value) {
-    sem->value = value;
-    wait_queue_init(&(sem->wait_queue));
+    sem->value = value;    // 设置信号量的初始值
+    wait_queue_init(&(sem->wait_queue));  // 初始化信号量的等待队列
 }
 
 static __noinline void __up(semaphore_t *sem, uint32_t wait_state) {
